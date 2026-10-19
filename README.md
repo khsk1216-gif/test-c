@@ -1,54 +1,47 @@
-# 모아 — 용돈 기록장
+# 모아 — 가입 없이 쓰는 용돈 기록장
 
-여러 사용자가 가입해 각자 수입·지출과 월 예산을 관리하는 한국어 웹 앱입니다. React + Vite, Supabase Auth/Postgres를 사용하며 Vercel에서 배포할 수 있습니다.
+접속하면 곧바로 수입·지출과 월 예산을 기록하는 한국어 웹 앱입니다. React + Vite, Supabase Auth/Postgres를 사용하며 기존 Vercel `test-c`에 배포됩니다.
 
-## 구현된 기능
+**앱:** https://test-c-eight.vercel.app
 
-- 이메일·비밀번호 회원가입/로그인, 비밀번호 재설정
-- 날짜·금액·카테고리·메모를 포함한 수입·지출 추가, 수정, 삭제
-- 월별 수입·지출, 전체 잔액, 날짜 구간별 지출 그래프, 항목별 지출 통계
+## 사용 방식
+
+- 회원가입·로그인·비밀번호 입력 화면이 없습니다.
+- 기존 Supabase 세션이 있으면 그대로 재사용해 기존 기록을 유지합니다.
+- 처음 접속하면 익명 세션을 자동으로 만들고, 브라우저가 해당 세션을 보관합니다.
+- 같은 브라우저에서 새로고침하거나 다시 열면 같은 기록이 이어집니다.
+- 서로 다른 브라우저·기기의 기록은 분리됩니다. 브라우저 데이터를 지우거나 익명 세션을 잃으면 해당 기록에 다시 접근할 수 없습니다.
+- 실제 내역·예산·반복 설정은 Supabase에 저장되며, `auth.uid() = user_id`인 소유자만 조회·수정할 수 있습니다.
+
+## 기능
+
+- 날짜·금액·카테고리·메모를 포함한 수입·지출 추가·수정·삭제
+- 월별 수입·지출·전체 잔액, 날짜 구간별 지출 그래프, 항목별 통계
 - 월별 예산, 남은 예산과 초과 금액
-- 월 1회 반복되는 수입·지출 등록과 반복 종료
-- 모바일 화면, 내역 검색, 수입·지출 및 카테고리 필터
-- 계정 데이터와 분리된 브라우저 체험 공간
+- 매달 반복되는 수입·지출 등록과 반복 종료
+- 모바일 화면, 검색과 필터
 
-반복 내역은 로그인·새로고침·화면 복귀 시, 한국 시간으로 오늘까지 도래한 항목을 소급 생성합니다. 닫혀 있는 앱에서 백그라운드로 실행되는 작업은 없습니다. 29~31일이 없는 달에는 말일에 반영합니다. 데이터베이스 고유 제약으로 동시 접속과 재실행 시 중복을 막습니다. 삭제한 기록은 소프트 삭제해 자동 재생성을 막고, 반복 종료 시 이미 기록된 내역은 유지합니다.
+반복 내역은 접속·새로고침·화면 복귀 시 한국 시간으로 오늘까지 도래한 항목을 생성합니다. 29~31일이 없는 달에는 말일에 반영합니다. 고유 제약으로 중복을 막고, 소프트 삭제한 내역은 다시 생성하지 않습니다. 반복을 종료해도 기존 내역은 유지합니다.
 
-## 로컬 실행
+## 개발·배포
 
 ```sh
 npm ci
 cp .env.example .env.local
-# .env.local의 Supabase URL과 publishable key를 설정
+# Supabase URL과 publishable key 설정
 npm run dev
 ```
 
-필요한 환경 변수는 `VITE_SUPABASE_URL`과 `VITE_SUPABASE_ANON_KEY`입니다. 후자의 이름은 기존 앱과 호환을 위해 유지했으며, 값에는 `sb_publishable_`로 시작하는 publishable key를 권장합니다. 브라우저에 노출되는 설정이므로 service_role/secret key를 사용하지 마세요. `.env.local`은 Git에서 제외됩니다.
+환경 변수는 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`입니다. 후자의 이름은 기존 앱과 호환을 위해 유지하며 값으로 publishable key를 사용할 수 있습니다. service_role/secret key는 클라이언트 환경 변수에 넣지 않습니다.
 
-## 데이터베이스 설치
+Supabase Authentication → Sign In / Providers에서 **Allow anonymous sign-ins**를 켜야 합니다. 현재 연결된 프로젝트에는 적용했습니다. 이메일 확인이나 기존 사용자 설정은 변경하지 않았습니다. 별도의 이메일 발송 설정 없이 동작합니다.
 
-- 새 프로젝트: SQL Editor에서 루트 `schema.sql`을 한 번 실행합니다.
-- 기존 모아의 transactions 테이블만 있는 프로젝트: `supabase/upgrade.sql`만 한 번 실행합니다.
-- 현재 연결한 Supabase 프로젝트에는 업그레이드가 이미 적용됐습니다. 같은 업그레이드를 다시 실행하지 마세요.
+새 DB는 `schema.sql`, 기존 모아 transactions 테이블만 있는 DB는 `supabase/upgrade.sql`을 한 번 실행합니다. 현재 DB에는 이미 적용되어 있으므로 다시 실행하지 않습니다. 세 테이블의 RLS와 SECURITY INVOKER 반복 RPC는 그대로 유지합니다. 익명 사용자는 authenticated 역할을 사용하므로 익명 접근 관련 advisory가 표시되며, 이는 자신의 행에만 접근하는 이 앱의 의도된 동작입니다. https://supabase.com/docs/guides/auth/auth-anonymous#access-control
 
-세 테이블 모두 RLS가 활성화되어 있고 `auth.uid() = user_id`로 계정별 읽기·쓰기를 제한합니다. 클라이언트에는 SELECT/INSERT/UPDATE만 허용하고 TRUNCATE와 영구 DELETE 권한을 주지 않습니다. 반복 RPC는 SECURITY INVOKER로 실행됩니다.
+Vercel: Framework Vite / Install `npm ci` / Build `npm run build` / Output `dist`. GitHub main에 반영하면 기존 test-c 프로젝트가 자동 배포합니다. 팀 ID를 명시한 조회에서 오류가 발생한 경우 확인된 소유 계정의 기본 범위에서 프로젝트를 조회하면 정상 작동했습니다.
 
-## Vercel 배포
-
-1. 이 GitHub 저장소를 Vercel에 Import 합니다.
-2. Framework: Vite / Install: `npm ci` / Build: `npm run build` / Output: `dist`.
-3. Vercel Environment Variables에 위 두 변수를 Production·Preview·Development에 설정하고 배포합니다.
-4. Supabase Authentication → URL Configuration에서 Site URL과 Redirect URLs에 실제 배포 URL을 등록합니다. 검증된 배포 주소는 `https://test-c-eight.vercel.app`입니다. 이 도메인의 인증 리디렉션 허용 설정은 별도로 확인하세요.
-5. 회원가입 확인과 비밀번호 재설정 메일을 일반 사용자에게 보내려면 Supabase의 custom SMTP 설정을 확인합니다. 기본 메일 발송 서비스는 팀 구성원 주소로 제한됩니다. https://supabase.com/docs/guides/auth/auth-smtp
-
-현재 기존 Vercel `test-c` 프로젝트에 GitHub main 브랜치가 연결되어 자동 배포됩니다. 프로덕션 주소: https://test-c-eight.vercel.app . 구현 커밋 `babf24b`의 READY 상태, 공개 주소의 HTTP 200, 브라우저 로그인 화면과 콘솔 오류 없음을 확인했습니다. 팀 ID를 명시한 API 요청은 403/404가 발생했지만, 동일한 소유 계정과 프로젝트임을 확인한 뒤 기본 계정 범위로 조회하면 정상 작동했습니다. 이 오류를 실제 배포 실패로 안내했던 이전 기록을 정정합니다.
+환경 변수가 없는 로컬 실행은 기존 브라우저 저장 모드로 자동 시작하며, Supabase 연결 오류를 브라우저 저장으로 조용히 대체하지 않습니다. 기존 체험 공간의 로컬 데이터는 지우거나 다른 사용자에게 합치지 않습니다.
 
 ## 검증
 
-```sh
-npm run check
-```
-
-날짜 경계, 윤년·월말, 월별 통계, 반복 중복 방지, 삭제 항목 유지, 금액 검증을 테스트합니다. `tests/rls.sql`은 실제 Supabase에서 별도 트랜잭션과 임시 사용자로 소유자 격리·반복 생성·쓰기 권한을 검증하며 마지막에 전부 롤백합니다. 현재 DB에서 통과했습니다.
-
-프로덕션 빌드는 통과했습니다. 배포 환경에서 로그인 화면 표시, JS 파일 로드, Supabase URL과 예산·반복 내역 코드 포함, 브라우저 콘솔 오류 없음을 확인했습니다. 실제 회원가입 이메일 전달과 로그인 후 전체 사용자 흐름은 미검증입니다. Supabase 보안 점검에서 유출 비밀번호 보호가 비활성화된 점이 확인됐습니다. 설정 설명: https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection
+`npm run check`로 날짜·월말·통계·반복·금액 계산과 자동 세션의 재사용·동시 접속·재시도·탭 간 잠금 테스트를 실행합니다. 실제 Supabase 익명 사용자 2개로 기록·예산 저장, 반복 RPC 호출, 다른 사용자 데이터 차단을 검증했습니다. `tests/rls.sql`은 별도의 임시 사용자 트랜잭션으로 DB 소유자 격리를 검증하고 롤백합니다.

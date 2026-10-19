@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Coins,
   LayoutDashboard,
-  LogOut,
   Menu,
   Plus,
   Search,
@@ -32,6 +31,7 @@ import {
   monthStats,
   syncGuest,
 } from "./domain.mjs";
+import { ensureSession } from "./session.mjs";
 import "./style.css";
 const url = import.meta.env.VITE_SUPABASE_URL,
   key = import.meta.env.VITE_SUPABASE_ANON_KEY,
@@ -71,19 +71,9 @@ const freshForm = () => ({
   due_day: 1,
 });
 const friendly = (e) =>
-  ({
-    invalid_credentials: "이메일 또는 비밀번호를 확인해 주세요.",
-    email_not_confirmed: "이메일 인증 후 로그인해 주세요.",
-    user_already_exists: "이미 가입된 이메일이에요.",
-    over_email_send_rate_limit:
-      "메일 요청이 많아요. 잠시 후 다시 시도해 주세요.",
-    email_address_not_authorized:
-      "이메일 발송 설정이 필요해요. 앱 관리자에게 문의해 주세요.",
-  })[e?.code] ||
-  (e?.message?.includes("Failed to fetch")
+  e?.message?.includes("Failed to fetch")
     ? "연결을 확인하고 다시 시도해 주세요."
-    : e?.message) ||
-  "처리하지 못했어요. 다시 시도해 주세요.";
+    : "처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
 
 function Modal({ title, children, onClose }) {
   const ref = useRef(null);
@@ -145,7 +135,7 @@ function Modal({ title, children, onClose }) {
 }
 function App() {
   const [user, setUser] = useState(null),
-    [ready, setReady] = useState(!db),
+    [ready, setReady] = useState(false),
     [guest, setGuest] = useState(false),
     [data, setData] = useState(emptyData),
     [loading, setLoading] = useState(false),
@@ -155,10 +145,8 @@ function App() {
     ),
     [page, setPage] = useState("dashboard"),
     [menu, setMenu] = useState(false);
-  const [mode, setMode] = useState("login"),
-    [email, setEmail] = useState(""),
-    [password, setPassword] = useState(""),
-    [authMessage, setAuthMessage] = useState(""),
+  const [sessionError, setSessionError] = useState(""),
+    [sessionAttempt, setSessionAttempt] = useState(0),
     [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(""),
     [modal, setModal] = useState(null),
@@ -195,31 +183,46 @@ function App() {
         ),
     );
   useEffect(() => {
-    if (!db) return;
     let live = true;
-    db.auth.getSession().then(({ data, error }) => {
-      if (!live) return;
-      if (error) setAuthMessage(friendly(error));
-      setUser(data.session?.user || null);
+    setSessionError("");
+    setReady(false);
+    if (!db) {
+      enterGuest();
       setReady(true);
-    });
+      return;
+    }
     const {
       data: { subscription },
-    } = db.auth.onAuthStateChange((event, s) => {
-      if (event === "PASSWORD_RECOVERY") setMode("update");
-      if (event === "SIGNED_OUT") {
+    } = db.auth.onAuthStateChange((event, session) => {
+      if (!live) return;
+      if (session) {
+        setUser(session.user);
+      } else if (event === "SIGNED_OUT") {
         generation.current++;
         activeUser.current = null;
+        setUser(null);
         setData(emptyData());
+        setSessionAttempt((n) => n + 1);
       }
-      setUser(s?.user || null);
-      setReady(true);
     });
+    ensureSession(db)
+      .then((session) => {
+        if (!live) return;
+        setUser(session.user);
+        setReady(true);
+      })
+      .catch(() => {
+        if (!live) return;
+        setSessionError(
+          "기록 저장소에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.",
+        );
+        setReady(true);
+      });
     return () => {
       live = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [sessionAttempt]);
   useEffect(() => {
     activeUser.current = user?.id || null;
   }, [user?.id]);
@@ -236,9 +239,7 @@ function App() {
       try {
         localStorage.setItem(guestKey, JSON.stringify(data));
       } catch {
-        setNotice(
-          "브라우저 저장 공간이 부족해요. 로그인해 기록을 저장해 주세요.",
-        );
+        setNotice("브라우저 저장 공간이 부족해요. 저장 공간을 확인해 주세요.");
       }
   }, [data, guest]);
   useEffect(() => {
@@ -309,74 +310,6 @@ function App() {
     setGuest(true);
     setLoadError("");
     setLoading(false);
-  }
-  async function authenticate(e) {
-    e.preventDefault();
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    setAuthMessage("");
-    try {
-      if (!db)
-        throw new Error(
-          "로그인 연결을 준비 중이에요. 체험하기로 먼저 둘러보세요.",
-        );
-      let r;
-      if (mode === "reset")
-        r = await db.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin,
-        });
-      else if (mode === "update") r = await db.auth.updateUser({ password });
-      else if (mode === "signup")
-        r = await db.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: window.location.origin },
-        });
-      else r = await db.auth.signInWithPassword({ email, password });
-      if (r.error) throw r.error;
-      setPassword("");
-      if (mode === "signup")
-        setAuthMessage(
-          r.data.session
-            ? "가입이 완료됐어요."
-            : "가입 확인 메일을 보냈어요. 메일의 인증 링크를 눌러 주세요.",
-        );
-      if (mode === "reset")
-        setAuthMessage(
-          "가입된 주소라면 재설정 메일이 발송돼요. 메일함을 확인해 주세요.",
-        );
-      if (mode === "update") {
-        setMode("login");
-        setNotice("비밀번호를 변경했어요.");
-      }
-    } catch (e) {
-      setAuthMessage(friendly(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function logout() {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    if (!guest && db) {
-      const { error } = await db.auth.signOut();
-      if (error) {
-        setNotice(friendly(error));
-        setBusy(false);
-        return;
-      }
-    }
-    generation.current++;
-    activeUser.current = null;
-    setGuest(false);
-    setUser(null);
-    setData(emptyData());
-    setBusy(false);
-    setLoading(false);
-    setModal(null);
-    setMode("login");
   }
   function openTransaction(row = null, repeat = false) {
     setForm(row ? { ...row, repeat: false } : { ...freshForm(), repeat });
@@ -545,135 +478,29 @@ function App() {
   const closeModal = () => {
     if (!busyRef.current) setModal(null);
   };
-  if (!ready)
+  if (sessionError)
+    return (
+      <div className="loading">
+        <section className="session-error" role="alert">
+          <Coins size={30} />
+          <h1>잠시 연결을 확인해 주세요</h1>
+          <p>{sessionError}</p>
+          <button
+            className="primary"
+            onClick={() => setSessionAttempt((n) => n + 1)}
+          >
+            다시 연결하기
+          </button>
+        </section>
+      </div>
+    );
+  if (!ready || (!guest && !user))
     return (
       <div className="loading" role="status">
-        모아를 불러오는 중이에요…
+        나만의 기록을 불러오는 중이에요…
       </div>
     );
-  if ((!user && !guest) || mode === "update")
-    return (
-      <div className="auth-page">
-        <div className="auth-brand">
-          <div className="brand-mark">
-            <Coins size={22} />
-          </div>
-          <b>모아</b>
-        </div>
-        <div className="auth-card">
-          <div className="auth-art">
-            <span className="orb orb-a" />
-            <span className="orb orb-b" />
-            <span className="coin">🪙</span>
-            <div className="art-note">
-              <Sparkles size={15} /> 작은 기록이 큰 습관이 돼요
-            </div>
-          </div>
-          <div className="auth-content">
-            <div className="eyebrow">나를 위한 용돈 기록장</div>
-            <h1>
-              내 용돈을
-              <br />
-              <em>차곡차곡</em> 모아봐요.
-            </h1>
-            <p>
-              오늘의 지출부터 매달의 예산까지.
-              <br />내 기록은 나만 볼 수 있어요.
-            </p>
-            <form onSubmit={authenticate}>
-              {mode !== "update" && (
-                <label>
-                  이메일
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    required
-                    maxLength={254}
-                  />
-                </label>
-              )}
-              {mode !== "reset" && (
-                <label>
-                  {mode === "update" ? "새 비밀번호" : "비밀번호"}
-                  <input
-                    type="password"
-                    minLength={mode === "login" ? 1 : 8}
-                    maxLength={128}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={
-                      mode === "login"
-                        ? "비밀번호를 입력해 주세요"
-                        : "8자 이상 입력해 주세요"
-                    }
-                    autoComplete={
-                      mode === "login" ? "current-password" : "new-password"
-                    }
-                    required
-                  />
-                </label>
-              )}
-              {authMessage && (
-                <div className="auth-message" role="status">
-                  {authMessage}
-                </div>
-              )}
-              <button className="primary auth-submit" disabled={busy || !db}>
-                {busy
-                  ? "처리 중…"
-                  : {
-                      login: "로그인하기",
-                      signup: "계정 만들기",
-                      reset: "재설정 메일 보내기",
-                      update: "비밀번호 변경",
-                    }[mode]}{" "}
-                <ChevronRight size={17} />
-              </button>
-            </form>
-            {mode !== "update" && (
-              <>
-                <div className="auth-switch">
-                  {mode === "login"
-                    ? "아직 계정이 없나요?"
-                    : "이미 계정이 있나요?"}{" "}
-                  <button
-                    disabled={busy}
-                    onClick={() => {
-                      setMode(mode === "login" ? "signup" : "login");
-                      setAuthMessage("");
-                    }}
-                  >
-                    {mode === "login" ? "회원가입" : "로그인"}
-                  </button>
-                </div>
-                {mode === "login" && (
-                  <button
-                    className="text-button auth-link"
-                    onClick={() => {
-                      setMode("reset");
-                      setAuthMessage("");
-                    }}
-                  >
-                    비밀번호를 잊으셨나요?
-                  </button>
-                )}
-                <button className="text-button auth-link" onClick={enterGuest}>
-                  가입 없이 체험하기 <ChevronRight size={15} />
-                </button>
-                <div className="demo-caption">
-                  체험 기록은 현재 브라우저에만 저장돼요.
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="auth-footer">기록하고, 돌아보고, 조금씩 모아요. ✳</div>
-      </div>
-    );
-  const name = guest ? "체험" : user.email?.split("@")[0] || "모아",
+  const name = "나",
     pages = {
       dashboard: "대시보드",
       history: "전체 내역",
@@ -734,16 +561,10 @@ function App() {
           <div className="avatar">{name[0].toUpperCase()}</div>
           <div className="user-info">
             <b>{name}</b>
-            <span>{guest ? "체험 · 이 브라우저에 저장" : user.email}</span>
+            <span>
+              {guest ? "브라우저에 자동 저장" : "나만의 기록 · 자동 저장"}
+            </span>
           </div>
-          <button
-            className="icon-button"
-            aria-label={guest ? "체험 종료" : "로그아웃"}
-            disabled={busy}
-            onClick={logout}
-          >
-            <LogOut size={17} />
-          </button>
         </div>
       </aside>
       {menu && (
@@ -784,22 +605,20 @@ function App() {
           </div>
         </header>
         <div className="content">
-          {guest && (
-            <div className="guest-banner">
-              체험 공간이에요. 로그인하면 여러 기기에서 나만의 기록을 이어갈 수
-              있어요.
-              <button onClick={logout}>
-                로그인하기 <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
+          <div className="guest-banner">
+            <span>
+              가입 없이 바로 기록하세요. 같은 브라우저에서 기록이 이어져요.
+              <br />
+              브라우저 데이터를 지우면 기존 기록에 다시 접근할 수 없어요.
+            </span>
+          </div>
           <div className="welcome-row">
             <div>
               <div className="eyebrow">
                 작은 기록, 여유로운 내일 <span>✳</span>
               </div>
               <h1>
-                {page === "dashboard" ? `안녕하세요, ${name}님!` : pages[page]}{" "}
+                {page === "dashboard" ? "오늘의 용돈을 모아봐요" : pages[page]}{" "}
                 {page === "dashboard" && <span>👋</span>}
               </h1>
               <p>

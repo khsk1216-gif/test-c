@@ -1686,3 +1686,27 @@ select:focus-visible {
     transition: none !important;
   }
 }
+.session-error {
+  width: min(420px, 90vw);
+  padding: 28px;
+  background: white;
+  border: 1px solid #e2eade;
+  border-radius: 18px;
+  text-align: center;
+}
+.session-error > svg {
+  color: #5b9a70;
+}
+.session-error h1 {
+  font-size: 20px;
+  margin: 16px 0 10px;
+}
+.session-error p {
+  color: #7f8e77;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.session-error .primary {
+  margin: 20px auto 0;
+  padding: 12px 20px;
+}
