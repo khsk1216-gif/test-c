@@ -1,37 +1,1472 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { createRoot } from 'react-dom/client'
-import { createClient } from '@supabase/supabase-js'
-import { ArrowDownLeft, ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight, Coins, LayoutDashboard, LogOut, Menu, Plus, Search, Sparkles, Trash2, TrendingUp, Wallet, X } from 'lucide-react'
-import './style.css'
+import React, { useEffect, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { createClient } from "@supabase/supabase-js";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Coins,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+  Wallet,
+  X,
+  Pencil,
+  Repeat2,
+  Target,
+  Check,
+  RefreshCw,
+} from "lucide-react";
+import {
+  categories,
+  money as won,
+  dateKey,
+  monthKey,
+  validAmount,
+  monthStats,
+  syncGuest,
+} from "./domain.mjs";
+import "./style.css";
+const url = import.meta.env.VITE_SUPABASE_URL,
+  key = import.meta.env.VITE_SUPABASE_ANON_KEY,
+  db = url && key ? createClient(url, key) : null;
+const guestKey = "moa-guest-v2",
+  emptyData = () => ({ rows: [], budgets: [], rules: [] });
+const emoji = {
+  용돈: "🪙",
+  아르바이트: "💼",
+  간식: "🍪",
+  식비: "🍜",
+  교통: "🚌",
+  쇼핑: "🛍️",
+  문화생활: "🎟️",
+  저축: "🐷",
+  기타: "✨",
+};
+const tint = {
+  용돈: "#d9f2e7",
+  아르바이트: "#e5e1ff",
+  간식: "#fff0d7",
+  식비: "#ffe2dc",
+  교통: "#deefff",
+  쇼핑: "#fce0ed",
+  문화생활: "#e9e5ff",
+  저축: "#d6f1ee",
+  기타: "#eceeea",
+};
+const freshForm = () => ({
+  type: "expense",
+  title: "",
+  amount: "",
+  category: "식비",
+  date: dateKey(),
+  memo: "",
+  repeat: false,
+  due_day: 1,
+});
+const friendly = (e) =>
+  ({
+    invalid_credentials: "이메일 또는 비밀번호를 확인해 주세요.",
+    email_not_confirmed: "이메일 인증 후 로그인해 주세요.",
+    user_already_exists: "이미 가입된 이메일이에요.",
+    over_email_send_rate_limit:
+      "메일 요청이 많아요. 잠시 후 다시 시도해 주세요.",
+    email_address_not_authorized:
+      "이메일 발송 설정이 필요해요. 앱 관리자에게 문의해 주세요.",
+  })[e?.code] ||
+  (e?.message?.includes("Failed to fetch")
+    ? "연결을 확인하고 다시 시도해 주세요."
+    : e?.message) ||
+  "처리하지 못했어요. 다시 시도해 주세요.";
 
-const url=import.meta.env.VITE_SUPABASE_URL, key=import.meta.env.VITE_SUPABASE_ANON_KEY
-const db=url&&key?createClient(url,key):null, today=new Date().toISOString().slice(0,10)
-const categories=['용돈','아르바이트','간식','식비','교통','쇼핑','문화생활','저축','기타']
-const emoji={용돈:'🪙',아르바이트:'💼',간식:'🍪',식비:'🍜',교통:'🚌',쇼핑:'🛍️',문화생활:'🎟️',저축:'🐷',기타:'✨'}
-const tint={용돈:'#d9f2e7',아르바이트:'#e5e1ff',간식:'#fff0d7',식비:'#ffe2dc',교통:'#deefff',쇼핑:'#fce0ed',문화생활:'#e9e5ff',저축:'#d6f1ee',기타:'#eceeea'}
-const won=n=>new Intl.NumberFormat('ko-KR').format(Number(n)||0)
-const samples=[['이번 달 용돈','용돈',50000,'income',2,'엄마가 주신 용돈'],['친구와 간식','간식',6500,'expense',5,'아이스크림'],['버스 충전','교통',10000,'expense',8,'교통카드 충전'],['책 중고 판매','아르바이트',12000,'income',12,'읽은 책 판매'],['점심 식사','식비',8500,'expense',14,'친구들과 분식집'],['문구 쇼핑','쇼핑',4300,'expense',17,'새 노트와 펜']].map(([title,category,amount,type,day,memo],i)=>({id:`sample-${i}`,title,category,amount,type,date:`${today.slice(0,8)}${String(day).padStart(2,'0')}`,memo}))
-function App(){
- const [guest,setGuest]=useState(false),demo=!db||guest,[user,setUser]=useState(null),[ready,setReady]=useState(!db),[mode,setMode]=useState('login'),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[authError,setAuthError]=useState(''),[notice,setNotice]=useState(''),[rows,setRows]=useState(()=>JSON.parse(localStorage.getItem('moa-transactions')||'null')||samples),[month,setMonth]=useState(new Date()),[modal,setModal]=useState(false),[filter,setFilter]=useState('all'),[query,setQuery]=useState(''),[menu,setMenu]=useState(false)
- const [form,setForm]=useState({type:'expense',title:'',amount:'',category:'간식',date:today,memo:''})
- useEffect(()=>{if(!db)return;db.auth.getSession().then(({data})=>{setUser(data.session?.user||null);setReady(true)});const {data:{subscription}}=db.auth.onAuthStateChange((_e,s)=>{setUser(s?.user||null);setReady(true)});return()=>subscription.unsubscribe()},[])
- useEffect(()=>{if(demo||!user)return;let live=true;db.from('transactions').select('*').order('date',{ascending:false}).then(({data,error})=>{if(!live)return;if(error)setNotice(error.message);else setRows(data||[])});return()=>{live=false}},[user,demo])
- useEffect(()=>{if(demo)localStorage.setItem('moa-transactions',JSON.stringify(rows))},[rows,demo])
- const ym=`${month.getFullYear()}-${String(month.getMonth()+1).padStart(2,'0')}`, current=rows.filter(r=>String(r.date).startsWith(ym))
- const income=current.filter(r=>r.type==='income').reduce((s,r)=>s+Number(r.amount),0),expense=current.filter(r=>r.type==='expense').reduce((s,r)=>s+Number(r.amount),0),balance=rows.reduce((s,r)=>s+(r.type==='income'?1:-1)*Number(r.amount),0)
- const visible=current.filter(r=>(filter==='all'||r.type===filter)&&`${r.title} ${r.category} ${r.memo||''}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>b.date.localeCompare(a.date))
- const chart=Array.from({length:6},(_,i)=>{let d=new Date(month.getFullYear(),month.getMonth(),i*5+1),k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;return{label:`${i*5+1}일`,value:rows.filter(r=>r.date.startsWith(k)&&r.type==='expense').reduce((s,r)=>s+Number(r.amount),0)}}),max=Math.max(...chart.map(x=>x.value),1)
- function shift(n){setMonth(new Date(month.getFullYear(),month.getMonth()+n,1))}
- async function authenticate(e){e.preventDefault();setAuthError('');setNotice('');if(!db){setUser({email:email||'demo@moa.app'});return}try{const {data,error}=mode==='signup'?await db.auth.signUp({email,password}):await db.auth.signInWithPassword({email,password});if(error){setAuthError(error.message);return}if(mode==='signup')setNotice(data.session?'가입됐어요. 로그인되었습니다.':'가입 확인 메일을 보냈어요. 받은 편지함과 스팸함을 확인해 주세요.')}catch(error){setAuthError(error.message||'요청 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.')}}
- async function logout(){if(db&&!guest)await db.auth.signOut();setGuest(false);setUser(null);setRows([])}
- async function save(e){e.preventDefault();const p={title:form.title.trim(),category:form.category,amount:Number(form.amount),type:form.type,date:form.date,memo:form.memo.trim()};if(!p.title||!p.amount)return;if(db&&!demo){const {data,error}=await db.from('transactions').insert(p).select().single();if(error){setNotice(error.message);return}setRows(x=>[data,...x])}else setRows(x=>[{...p,id:crypto.randomUUID()},...x]);setModal(false);setForm({type:'expense',title:'',amount:'',category:'간식',date:today,memo:''})}
- async function remove(id){if(db&&!demo){const{error}=await db.from('transactions').delete().eq('id',id);if(error){setNotice(error.message);return}}setRows(x=>x.filter(r=>r.id!==id))}
- if(!ready)return <div className="loading">모아를 불러오는 중이에요…</div>
- if(!user)return <div className="auth-page"><div className="auth-brand"><div className="brand-mark"><Coins size={22}/></div><b>모아</b></div><div className="auth-card"><div className="auth-art"><span className="orb orb-a"/><span className="orb orb-b"/><span className="coin">🪙</span><div className="art-note"><Sparkles size={15}/> 작은 기록이 큰 습관이 돼요</div></div><div className="auth-content"><div className="eyebrow">MY LITTLE MONEY JOURNAL</div><h1>내 용돈을<br/><em>차곡차곡</em> 모아봐요.</h1><p>얼마를 쓰고, 얼마나 남았는지<br/>가볍게 기록해 보세요.</p><form onSubmit={authenticate}><label>이메일<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" required/></label><label>비밀번호<input type="password" minLength="6" value={password} onChange={e=>setPassword(e.target.value)} placeholder="6자 이상 입력해 주세요" required/></label>{authError&&<div className="error">{authError}</div>}<button className="primary auth-submit">{mode==='login'?'로그인하기':'계정 만들기'} <ChevronRight size={17}/></button></form>{notice&&<div style={{background:"#eaf6ef",color:"#267653",padding:"10px 12px",borderRadius:8,fontSize:12,lineHeight:1.6,marginTop:12}} role="status">{notice}</div>}<div className="auth-switch">{mode==='login'?'아직 계정이 없나요?':'이미 계정이 있나요?'} <button onClick={()=>{setMode(mode==='login'?'signup':'login');setAuthError('')}}>{mode==='login'?'회원가입':'로그인'}</button></div>{db&&<button type="button" className="text-button" style={{display:'block',margin:'14px auto 0'}} onClick={()=>{setRows(JSON.parse(localStorage.getItem('moa-transactions')||'null')||[]);setGuest(true);setUser({email:'게스트'})}}>가입 없이 체험하기</button>}{demo&&<div className="demo-caption">기록은 이 브라우저에만 저장돼요.</div>}</div></div><div className="auth-footer">차근차근 기록하는 나만의 용돈 습관 <span>✳</span></div></div>
- return <div className="app-shell"><aside className={`sidebar ${menu?'show':''}`}><div className="brand"><div className="brand-mark"><Coins size={21}/></div><b>모아</b><span className="brand-caption">MY MONEY LOG</span></div><div className="nav-label">메뉴</div><button className="nav-item active"><LayoutDashboard size={18}/> 대시보드</button><button className="nav-item" onClick={()=>setModal(true)}><Plus size={18}/> 내역 추가</button><div className="sidebar-tip"><div className="tip-icon"><Sparkles size={17}/></div><strong>작은 지출도<br/>기록해 보세요!</strong><p>꾸준한 기록이 똑똑한 소비 습관을 만들어요.</p><div className="tip-doodle">✳</div></div><div className="sidebar-bottom"><div className="avatar">{(user.email||'M')[0].toUpperCase()}</div><div className="user-info"><b>{user.email?.split('@')[0]||'내 계정'}</b><span>{demo?'브라우저에 저장 중':user.email}</span></div><button className="icon-button" title="로그아웃" onClick={logout}><LogOut size={17}/></button></div></aside>{menu&&<button className="scrim" onClick={()=>setMenu(false)}/>}<main className="main"><header className="topbar"><button className="icon-button mobile-toggle" onClick={()=>setMenu(!menu)}><Menu size={20}/></button><div className="crumb">내 공간 <ChevronRight size={14}/> <b>대시보드</b></div><div className="top-actions"><span><CalendarDays size={15}/>{new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'})}</span><div className="top-avatar">{(user.email||'M')[0].toUpperCase()}</div></div></header><div className="content"><div className="welcome-row"><div><div className="eyebrow">MONDAY, YOUR MONEY DAY <span>✳</span></div><h1>안녕하세요, {user.email?.split('@')[0]||'모아'}님! <span>👋</span></h1><p>이번 달 용돈 흐름을 살펴볼까요?</p></div><button className="primary add-button" onClick={()=>setModal(true)}><Plus size={18}/> 내역 추가</button></div><div className="month-control"><button className="icon-button" onClick={()=>shift(-1)}><ChevronLeft size={18}/></button><b>{month.getFullYear()}년 {month.getMonth()+1}월</b><button className="icon-button" onClick={()=>shift(1)}><ChevronRight size={18}/></button><button className="today-button" onClick={()=>setMonth(new Date())}>이번 달</button></div>
- <section className="summary-grid"><div className="summary-card balance-card"><div className="card-top"><span>전체 잔액</span><div className="summary-icon mint"><Wallet size={18}/></div></div><div className="amount">₩ {won(balance)}</div><div className="card-foot"><i className="status-dot"/> 지금까지 모은 금액</div><div className="balance-art">₩</div></div><div className="summary-card"><div className="card-top"><span>이번 달 수입</span><div className="summary-icon green"><ArrowDownLeft size={18}/></div></div><div className="amount">₩ {won(income)}</div><div className="card-foot"><TrendingUp size={14}/> 이번 달 들어온 금액</div></div><div className="summary-card"><div className="card-top"><span>이번 달 지출</span><div className="summary-icon peach"><ArrowUpRight size={18}/></div></div><div className="amount">₩ {won(expense)}</div><div className="card-foot"><TrendingUp size={14}/> 이번 달 나간 금액</div></div></section>
- <section className="dashboard-grid"><div className="panel chart-panel"><div className="panel-heading"><div><h2>지출 흐름</h2><p>날짜별 지출을 확인해요</p></div><span className="period">이번 달</span></div><div className="chart-total"><b>₩ {won(expense)}</b><span>총 지출</span></div><div className="chart"><div className="chart-guides"><span>₩{won(Math.ceil(max/10000)*10000)}</span><span>₩{won(Math.ceil(max/20000)*10000)}</span><span>₩0</span></div><div className="bar-area">{chart.map((d,i)=><div className="bar-col" key={i}><div className="bar-wrap"><div className={`bar ${d.value?'':'empty'}`} style={{height:`${Math.max(4,d.value/max*100)}%`}} title={`₩${won(d.value)}`}/></div><span>{d.label}</span></div>)}</div></div><div className="chart-foot"><span><i/> 지출</span><span>하루 단위 보기</span></div></div><div className="panel insight-panel"><div className="panel-heading"><div><h2>이번 달 한눈에</h2><p>나의 소비 밸런스</p></div><div className="insight-icon"><Sparkles size={18}/></div></div><div className="balance-visual"><div className="donut" style={{'--ratio':`${income?Math.min(100,expense/income*100):0}%`}}><div><span>지출 비율</span><b>{income?Math.round(expense/income*100):0}<small>%</small></b></div></div><div className="balance-labels"><div><i className="dot-income"/><span>수입</span><b>₩{won(income)}</b></div><div><i className="dot-expense"/><span>지출</span><b>₩{won(expense)}</b></div></div></div><div className="insight-message"><span>💡</span><p>{income?expense>income?'이번 달은 수입보다 지출이 많아요. 다음 달엔 조금씩 아껴봐요!':'좋아요! 수입 안에서 알뜰하게 쓰고 있어요.':'내역을 기록하면 소비 밸런스를 알려드릴게요.'}</p></div></div></section>
- <section className="panel history-panel"><div className="history-heading"><div><h2>최근 내역</h2><p>이번 달의 수입과 지출이에요</p></div><button className="text-button" onClick={()=>setFilter('all')}>전체 보기 <ChevronRight size={16}/></button></div><div className="history-tools"><div className="tabs">{[['전체','all'],['수입','income'],['지출','expense']].map(([label,val])=><button key={val} className={filter===val?'selected':''} onClick={()=>setFilter(val)}>{label}</button>)}</div><div className="search-box"><Search size={15}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="내역 검색"/></div></div><div className="transactions">{visible.length?visible.map(r=><div className="transaction" key={r.id}><div className="category-icon" style={{background:tint[r.category]||tint.기타}}>{emoji[r.category]||'✨'}</div><div className="transaction-name"><b>{r.title}</b><span>{r.category} <i>·</i> {new Date(`${r.date}T00:00:00`).toLocaleDateString('ko-KR',{month:'long',day:'numeric'})}</span></div><div className={`transaction-amount ${r.type}`}>{r.type==='income'?'+':'−'} ₩{won(r.amount)}</div><button className="delete-row" title="내역 삭제" onClick={()=>remove(r.id)}><Trash2 size={15}/></button></div>):<div className="empty-state"><div>🧾</div><b>아직 기록이 없어요</b><p>첫 내역을 추가해 용돈 흐름을 시작해 보세요.</p><button className="text-button" onClick={()=>setModal(true)}>내역 추가하기 <ChevronRight size={15}/></button></div>}</div></section><footer className="app-footer"><span>✳</span> 작은 기록이 모여 큰 습관이 돼요.</footer></div></main>
- {notice&&<div className="toast" onClick={()=>setNotice('')}>{notice}<X size={14}/></div>}{modal&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setModal(false)}><form className="modal" onSubmit={save}><div className="modal-head"><div><span className="eyebrow">NEW TRANSACTION</span><h2>내역 추가하기</h2></div><button type="button" className="icon-button" onClick={()=>setModal(false)}><X size={19}/></button></div><div className="type-toggle"><button type="button" className={form.type==='expense'?'on expense-on':''} onClick={()=>setForm({...form,type:'expense'})}>지출</button><button type="button" className={form.type==='income'?'on income-on':''} onClick={()=>setForm({...form,type:'income'})}>수입</button></div><label>내역 이름<input required autoFocus value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="예: 점심 식사"/></label><div className="form-row"><label>금액<input required type="number" min="1" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="0"/></label><label>날짜<input required type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></label></div><label>카테고리<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>메모 <span className="optional">선택</span><input value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})} placeholder="간단한 메모를 남겨보세요"/></label><button className="primary save-button">저장하기 <ChevronRight size={17}/></button></form></div>}</div>
+function Modal({ title, children, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    ref.current?.focus();
+    const key = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "Tab") {
+        const items = [
+            ...ref.current.querySelectorAll(
+              "button:not([disabled]),input:not([disabled]),select:not([disabled])",
+            ),
+          ],
+          first = items[0],
+          last = items.at(-1);
+        if (
+          e.shiftKey &&
+          (document.activeElement === first ||
+            document.activeElement === ref.current)
+        ) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("keydown", key);
+      previous?.focus();
+    };
+  }, []);
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <section
+        className="modal"
+        ref={ref}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <div className="modal-head">
+          <h2>{title}</h2>
+          <button className="icon-button" aria-label="닫기" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
 }
-createRoot(document.getElementById('root')).render(<App/>)
+function App() {
+  const [user, setUser] = useState(null),
+    [ready, setReady] = useState(!db),
+    [guest, setGuest] = useState(false),
+    [data, setData] = useState(emptyData),
+    [loading, setLoading] = useState(false),
+    [loadError, setLoadError] = useState("");
+  const [month, setMonth] = useState(
+      () => new Date(`${dateKey().slice(0, 7)}-01T12:00:00`),
+    ),
+    [page, setPage] = useState("dashboard"),
+    [menu, setMenu] = useState(false);
+  const [mode, setMode] = useState("login"),
+    [email, setEmail] = useState(""),
+    [password, setPassword] = useState(""),
+    [authMessage, setAuthMessage] = useState(""),
+    [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(""),
+    [modal, setModal] = useState(null),
+    [form, setForm] = useState(freshForm),
+    [formError, setFormError] = useState(""),
+    [budgetInput, setBudgetInput] = useState(""),
+    [filter, setFilter] = useState("all"),
+    [category, setCategory] = useState("all"),
+    [query, setQuery] = useState("");
+  const generation = useRef(0),
+    activeUser = useRef(null),
+    busyRef = useRef(false);
+  busyRef.current = busy;
+  const safeData = guest || data.owner === user?.id ? data : emptyData();
+  const ym = monthKey(month),
+    stats = monthStats(safeData.rows, ym),
+    budget = safeData.budgets.find((b) => b.month === `${ym}-01`)?.amount || 0,
+    remaining = budget - stats.expense,
+    ratio = budget ? Math.min(100, (stats.expense / budget) * 100) : 0;
+  const visible = stats.current
+    .filter(
+      (r) =>
+        (filter === "all" || r.type === filter) &&
+        (category === "all" || r.category === category) &&
+        `${r.title} ${r.category} ${r.memo || ""}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
+    )
+    .sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) ||
+        String(b.created_at || b.id).localeCompare(
+          String(a.created_at || a.id),
+        ),
+    );
+  useEffect(() => {
+    if (!db) return;
+    let live = true;
+    db.auth.getSession().then(({ data, error }) => {
+      if (!live) return;
+      if (error) setAuthMessage(friendly(error));
+      setUser(data.session?.user || null);
+      setReady(true);
+    });
+    const {
+      data: { subscription },
+    } = db.auth.onAuthStateChange((event, s) => {
+      if (event === "PASSWORD_RECOVERY") setMode("update");
+      if (event === "SIGNED_OUT") {
+        generation.current++;
+        activeUser.current = null;
+        setData(emptyData());
+      }
+      setUser(s?.user || null);
+      setReady(true);
+    });
+    return () => {
+      live = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+  useEffect(() => {
+    activeUser.current = user?.id || null;
+  }, [user?.id]);
+  useEffect(() => {
+    if (guest || !user?.id) return;
+    setData(emptyData());
+    loadData(user.id);
+    return () => {
+      generation.current++;
+    };
+  }, [user?.id, guest]);
+  useEffect(() => {
+    if (guest)
+      try {
+        localStorage.setItem(guestKey, JSON.stringify(data));
+      } catch {
+        setNotice(
+          "브라우저 저장 공간이 부족해요. 로그인해 기록을 저장해 주세요.",
+        );
+      }
+  }, [data, guest]);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(""), 5000);
+    return () => clearTimeout(t);
+  }, [notice]);
+  useEffect(() => {
+    const refresh = () => {
+      if (
+        document.visibilityState === "visible" &&
+        !guest &&
+        user?.id &&
+        !busyRef.current
+      )
+        loadData(user.id);
+    };
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, [user?.id, guest]);
+  async function loadData(id) {
+    const run = ++generation.current;
+    setLoading(true);
+    setLoadError("");
+    try {
+      const sync = await db.rpc("moa_sync_recurring");
+      if (sync.error) throw sync.error;
+      const rows = [];
+      for (let offset = 0; ; offset += 1000) {
+        const r = await db
+          .from("transactions")
+          .select("*")
+          .eq("user_id", id)
+          .eq("is_deleted", false)
+          .order("id")
+          .range(offset, offset + 999);
+        if (r.error) throw r.error;
+        rows.push(...r.data);
+        if (r.data.length < 1000) break;
+      }
+      const [b, r] = await Promise.all([
+        db.from("moa_budgets").select("*").eq("user_id", id),
+        db
+          .from("moa_recurring")
+          .select("*")
+          .eq("user_id", id)
+          .order("created_at", { ascending: false }),
+      ]);
+      if (b.error) throw b.error;
+      if (r.error) throw r.error;
+      if (generation.current === run && activeUser.current === id)
+        setData({ rows, budgets: b.data, rules: r.data, owner: id });
+    } catch (e) {
+      if (generation.current === run) setLoadError(friendly(e));
+    } finally {
+      if (generation.current === run) setLoading(false);
+    }
+  }
+  function enterGuest() {
+    let saved = emptyData();
+    try {
+      const p = JSON.parse(localStorage.getItem(guestKey));
+      if (p && ["rows", "budgets", "rules"].every((k) => Array.isArray(p[k])))
+        saved = p;
+    } catch {}
+    generation.current++;
+    setData(syncGuest(saved));
+    setGuest(true);
+    setLoadError("");
+    setLoading(false);
+  }
+  async function authenticate(e) {
+    e.preventDefault();
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setAuthMessage("");
+    try {
+      if (!db)
+        throw new Error(
+          "로그인 연결을 준비 중이에요. 체험하기로 먼저 둘러보세요.",
+        );
+      let r;
+      if (mode === "reset")
+        r = await db.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        });
+      else if (mode === "update") r = await db.auth.updateUser({ password });
+      else if (mode === "signup")
+        r = await db.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: window.location.origin },
+        });
+      else r = await db.auth.signInWithPassword({ email, password });
+      if (r.error) throw r.error;
+      setPassword("");
+      if (mode === "signup")
+        setAuthMessage(
+          r.data.session
+            ? "가입이 완료됐어요."
+            : "가입 확인 메일을 보냈어요. 메일의 인증 링크를 눌러 주세요.",
+        );
+      if (mode === "reset")
+        setAuthMessage(
+          "가입된 주소라면 재설정 메일이 발송돼요. 메일함을 확인해 주세요.",
+        );
+      if (mode === "update") {
+        setMode("login");
+        setNotice("비밀번호를 변경했어요.");
+      }
+    } catch (e) {
+      setAuthMessage(friendly(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function logout() {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    if (!guest && db) {
+      const { error } = await db.auth.signOut();
+      if (error) {
+        setNotice(friendly(error));
+        setBusy(false);
+        return;
+      }
+    }
+    generation.current++;
+    activeUser.current = null;
+    setGuest(false);
+    setUser(null);
+    setData(emptyData());
+    setBusy(false);
+    setLoading(false);
+    setModal(null);
+    setMode("login");
+  }
+  function openTransaction(row = null, repeat = false) {
+    setForm(row ? { ...row, repeat: false } : { ...freshForm(), repeat });
+    setFormError("");
+    setModal("transaction");
+    setMenu(false);
+  }
+  function openBudget() {
+    setBudgetInput(String(budget || ""));
+    setFormError("");
+    setModal("budget");
+    setMenu(false);
+  }
+  async function mutate(work, success) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setFormError("");
+    const id = user?.id;
+    try {
+      await work();
+      if (!guest && activeUser.current === id) await loadData(id);
+      setModal(null);
+      setNotice(success);
+    } catch (e) {
+      setFormError(friendly(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  function saveTransaction(e) {
+    e.preventDefault();
+    if (!validAmount(form.amount)) {
+      setFormError("금액은 1~2,147,483,647원 사이의 정수로 입력해 주세요.");
+      return;
+    }
+    if (!form.title.trim()) {
+      setFormError("내역 이름을 입력해 주세요.");
+      return;
+    }
+    const p = {
+      title: form.title.trim(),
+      amount: Number(form.amount),
+      type: form.type,
+      category: form.category,
+      date: form.date,
+      memo: form.memo.trim(),
+    };
+    mutate(
+      async () => {
+        if (form.repeat) {
+          const { date, ...rest } = p,
+            r = {
+              ...rest,
+              start_date: date,
+              due_day: Number(form.due_day),
+              active: true,
+            };
+          if (guest)
+            setData((d) =>
+              syncGuest({
+                ...d,
+                rules: [{ ...r, id: crypto.randomUUID() }, ...d.rules],
+              }),
+            );
+          else {
+            const q = await db
+              .from("moa_recurring")
+              .insert({ ...r, user_id: user.id });
+            if (q.error) throw q.error;
+          }
+        } else if (guest)
+          setData((d) => ({
+            ...d,
+            rows: form.id
+              ? d.rows.map((r) => (r.id === form.id ? { ...r, ...p } : r))
+              : [{ ...p, id: crypto.randomUUID() }, ...d.rows],
+          }));
+        else {
+          const q = form.id
+            ? await db
+                .from("transactions")
+                .update(p)
+                .eq("id", form.id)
+                .eq("user_id", user.id)
+                .select("id")
+                .single()
+            : await db
+                .from("transactions")
+                .insert({ ...p, user_id: user.id })
+                .select("id")
+                .single();
+          if (q.error) throw q.error;
+        }
+      },
+      form.repeat
+        ? "반복 내역을 등록했어요."
+        : form.id
+          ? "내역을 수정했어요."
+          : "내역을 기록했어요.",
+    );
+  }
+  function saveBudget(e) {
+    e.preventDefault();
+    if (!validAmount(budgetInput)) {
+      setFormError("예산은 1원 이상의 정수로 입력해 주세요.");
+      return;
+    }
+    mutate(async () => {
+      const b = { month: `${ym}-01`, amount: Number(budgetInput) };
+      if (guest)
+        setData((d) => ({
+          ...d,
+          budgets: [...d.budgets.filter((x) => x.month !== b.month), b],
+        }));
+      else {
+        const q = await db
+          .from("moa_budgets")
+          .upsert({ ...b, user_id: user.id }, { onConflict: "user_id,month" });
+        if (q.error) throw q.error;
+      }
+    }, "이번 달 예산을 저장했어요.");
+  }
+  function deleteTransaction(row) {
+    mutate(async () => {
+      if (guest)
+        setData((d) => ({
+          ...d,
+          rows: d.rows.map((r) =>
+            r.id === row.id ? { ...r, is_deleted: true } : r,
+          ),
+        }));
+      else {
+        const q = await db
+          .from("transactions")
+          .update({ is_deleted: true })
+          .eq("id", row.id)
+          .eq("user_id", user.id)
+          .select("id")
+          .single();
+        if (q.error) throw q.error;
+      }
+    }, "내역을 삭제했어요.");
+  }
+  function stopRule(rule) {
+    mutate(async () => {
+      if (guest)
+        setData((d) => ({
+          ...d,
+          rules: d.rules.map((r) =>
+            r.id === rule.id ? { ...r, active: false } : r,
+          ),
+        }));
+      else {
+        const q = await db
+          .from("moa_recurring")
+          .update({ active: false })
+          .eq("id", rule.id)
+          .eq("user_id", user.id)
+          .select("id")
+          .single();
+        if (q.error) throw q.error;
+      }
+    }, "반복을 종료했어요. 이미 기록된 내역은 유지돼요.");
+  }
+  const closeModal = () => {
+    if (!busyRef.current) setModal(null);
+  };
+  if (!ready)
+    return (
+      <div className="loading" role="status">
+        모아를 불러오는 중이에요…
+      </div>
+    );
+  if ((!user && !guest) || mode === "update")
+    return (
+      <div className="auth-page">
+        <div className="auth-brand">
+          <div className="brand-mark">
+            <Coins size={22} />
+          </div>
+          <b>모아</b>
+        </div>
+        <div className="auth-card">
+          <div className="auth-art">
+            <span className="orb orb-a" />
+            <span className="orb orb-b" />
+            <span className="coin">🪙</span>
+            <div className="art-note">
+              <Sparkles size={15} /> 작은 기록이 큰 습관이 돼요
+            </div>
+          </div>
+          <div className="auth-content">
+            <div className="eyebrow">나를 위한 용돈 기록장</div>
+            <h1>
+              내 용돈을
+              <br />
+              <em>차곡차곡</em> 모아봐요.
+            </h1>
+            <p>
+              오늘의 지출부터 매달의 예산까지.
+              <br />내 기록은 나만 볼 수 있어요.
+            </p>
+            <form onSubmit={authenticate}>
+              {mode !== "update" && (
+                <label>
+                  이메일
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    required
+                    maxLength={254}
+                  />
+                </label>
+              )}
+              {mode !== "reset" && (
+                <label>
+                  {mode === "update" ? "새 비밀번호" : "비밀번호"}
+                  <input
+                    type="password"
+                    minLength={mode === "login" ? 1 : 8}
+                    maxLength={128}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={
+                      mode === "login"
+                        ? "비밀번호를 입력해 주세요"
+                        : "8자 이상 입력해 주세요"
+                    }
+                    autoComplete={
+                      mode === "login" ? "current-password" : "new-password"
+                    }
+                    required
+                  />
+                </label>
+              )}
+              {authMessage && (
+                <div className="auth-message" role="status">
+                  {authMessage}
+                </div>
+              )}
+              <button className="primary auth-submit" disabled={busy || !db}>
+                {busy
+                  ? "처리 중…"
+                  : {
+                      login: "로그인하기",
+                      signup: "계정 만들기",
+                      reset: "재설정 메일 보내기",
+                      update: "비밀번호 변경",
+                    }[mode]}{" "}
+                <ChevronRight size={17} />
+              </button>
+            </form>
+            {mode !== "update" && (
+              <>
+                <div className="auth-switch">
+                  {mode === "login"
+                    ? "아직 계정이 없나요?"
+                    : "이미 계정이 있나요?"}{" "}
+                  <button
+                    disabled={busy}
+                    onClick={() => {
+                      setMode(mode === "login" ? "signup" : "login");
+                      setAuthMessage("");
+                    }}
+                  >
+                    {mode === "login" ? "회원가입" : "로그인"}
+                  </button>
+                </div>
+                {mode === "login" && (
+                  <button
+                    className="text-button auth-link"
+                    onClick={() => {
+                      setMode("reset");
+                      setAuthMessage("");
+                    }}
+                  >
+                    비밀번호를 잊으셨나요?
+                  </button>
+                )}
+                <button className="text-button auth-link" onClick={enterGuest}>
+                  가입 없이 체험하기 <ChevronRight size={15} />
+                </button>
+                <div className="demo-caption">
+                  체험 기록은 현재 브라우저에만 저장돼요.
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="auth-footer">기록하고, 돌아보고, 조금씩 모아요. ✳</div>
+      </div>
+    );
+  const name = guest ? "체험" : user.email?.split("@")[0] || "모아",
+    pages = {
+      dashboard: "대시보드",
+      history: "전체 내역",
+      recurring: "반복 내역",
+    };
+  return (
+    <div className="app-shell">
+      <aside className={`sidebar ${menu ? "show" : ""}`}>
+        <div className="brand">
+          <div className="brand-mark">
+            <Coins size={21} />
+          </div>
+          <b>모아</b>
+          <span className="brand-caption">MY MONEY LOG</span>
+        </div>
+        <div className="nav-label">나의 용돈</div>
+        {[
+          [LayoutDashboard, "dashboard", "대시보드"],
+          [Wallet, "history", "전체 내역"],
+          [Repeat2, "recurring", "반복 내역"],
+        ].map(([Icon, p, label]) => (
+          <button
+            className={`nav-item ${page === p ? "active" : ""}`}
+            key={p}
+            onClick={() => {
+              setPage(p);
+              setMenu(false);
+            }}
+          >
+            <Icon size={18} />
+            {label}
+          </button>
+        ))}
+        <button
+          className="nav-item"
+          onClick={openBudget}
+          disabled={loading || !!loadError}
+        >
+          <Target size={18} /> 월 예산 설정
+        </button>
+        <div className="sidebar-tip">
+          <div className="tip-icon">
+            <Sparkles size={17} />
+          </div>
+          <strong>
+            작은 지출도
+            <br />
+            나를 아는 기록이에요.
+          </strong>
+          <p>
+            오늘 쓴 용돈을 기록하고
+            <br />
+            내일의 여유를 만들어 보세요.
+          </p>
+          <div className="tip-doodle">✳</div>
+        </div>
+        <div className="sidebar-bottom">
+          <div className="avatar">{name[0].toUpperCase()}</div>
+          <div className="user-info">
+            <b>{name}</b>
+            <span>{guest ? "체험 · 이 브라우저에 저장" : user.email}</span>
+          </div>
+          <button
+            className="icon-button"
+            aria-label={guest ? "체험 종료" : "로그아웃"}
+            disabled={busy}
+            onClick={logout}
+          >
+            <LogOut size={17} />
+          </button>
+        </div>
+      </aside>
+      {menu && (
+        <button
+          className="scrim"
+          aria-label="메뉴 닫기"
+          onClick={() => setMenu(false)}
+        />
+      )}
+      <main className="main">
+        <header className="topbar">
+          <button
+            className="icon-button mobile-toggle"
+            aria-label="메뉴 열기"
+            onClick={() => setMenu(!menu)}
+          >
+            <Menu size={20} />
+          </button>
+          <div className="crumb">
+            내 공간 <ChevronRight size={14} /> <b>{pages[page]}</b>
+          </div>
+          <div className="top-actions">
+            <span>
+              <CalendarDays size={15} />
+              {dateKey().replaceAll("-", ". ")}
+            </span>
+            <button
+              className="icon-button"
+              aria-label="새로고침"
+              disabled={loading || busy}
+              onClick={() =>
+                guest ? setData((d) => syncGuest(d)) : loadData(user.id)
+              }
+            >
+              <RefreshCw size={16} className={loading ? "spin" : ""} />
+            </button>
+            <div className="top-avatar">{name[0].toUpperCase()}</div>
+          </div>
+        </header>
+        <div className="content">
+          {guest && (
+            <div className="guest-banner">
+              체험 공간이에요. 로그인하면 여러 기기에서 나만의 기록을 이어갈 수
+              있어요.
+              <button onClick={logout}>
+                로그인하기 <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+          <div className="welcome-row">
+            <div>
+              <div className="eyebrow">
+                작은 기록, 여유로운 내일 <span>✳</span>
+              </div>
+              <h1>
+                {page === "dashboard" ? `안녕하세요, ${name}님!` : pages[page]}{" "}
+                {page === "dashboard" && <span>👋</span>}
+              </h1>
+              <p>
+                {page === "recurring"
+                  ? "매달 돌아오는 수입과 지출, 한 번에 관리해요."
+                  : "내 용돈이 어디로 갔는지 가볍게 살펴봐요."}
+              </p>
+            </div>
+            <button
+              className="primary add-button"
+              disabled={loading || !!loadError}
+              onClick={() => openTransaction(null, page === "recurring")}
+            >
+              <Plus size={18} />
+              {page === "recurring" ? "반복 등록" : "내역 추가"}
+            </button>
+          </div>
+          {loadError && (
+            <div className="load-error" role="alert">
+              <span>{loadError}</span>
+              <button className="text-button" onClick={() => loadData(user.id)}>
+                다시 불러오기
+              </button>
+            </div>
+          )}
+          {page !== "recurring" && (
+            <div className="month-control">
+              <button
+                className="icon-button"
+                aria-label="이전 달"
+                onClick={() =>
+                  setMonth(
+                    new Date(month.getFullYear(), month.getMonth() - 1, 1),
+                  )
+                }
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <b>
+                {month.getFullYear()}년 {month.getMonth() + 1}월
+              </b>
+              <button
+                className="icon-button"
+                aria-label="다음 달"
+                onClick={() =>
+                  setMonth(
+                    new Date(month.getFullYear(), month.getMonth() + 1, 1),
+                  )
+                }
+              >
+                <ChevronRight size={18} />
+              </button>
+              <button
+                className="today-button"
+                onClick={() =>
+                  setMonth(new Date(`${dateKey().slice(0, 7)}-01T12:00:00`))
+                }
+              >
+                이번 달
+              </button>
+            </div>
+          )}
+          {loading && (
+            <div className="loading-note" role="status">
+              기록을 불러오는 중이에요…
+            </div>
+          )}
+          {page === "dashboard" && (
+            <>
+              <section className="summary-grid" aria-label="용돈 요약">
+                {[
+                  [
+                    "전체 잔액",
+                    stats.balance,
+                    Wallet,
+                    "balance-card",
+                    "mint",
+                    "모든 기간의 수입 − 지출",
+                  ],
+                  [
+                    "이번 달 수입",
+                    stats.income,
+                    ArrowDownLeft,
+                    "",
+                    "green",
+                    "선택한 달에 들어온 금액",
+                  ],
+                  [
+                    "이번 달 지출",
+                    stats.expense,
+                    ArrowUpRight,
+                    "",
+                    "peach",
+                    "선택한 달에 사용한 금액",
+                  ],
+                ].map(([label, value, Icon, cls, color, desc]) => (
+                  <div className={`summary-card ${cls}`} key={label}>
+                    <div className="card-top">
+                      <span>{label}</span>
+                      <div className={`summary-icon ${color}`}>
+                        <Icon size={18} />
+                      </div>
+                    </div>
+                    <div className="amount">
+                      {loading ? "—" : `₩ ${won(value)}`}
+                    </div>
+                    <div className="card-foot">{desc}</div>
+                  </div>
+                ))}
+              </section>
+              <section className="budget-panel panel">
+                <div className="budget-heading">
+                  <div>
+                    <span className="eyebrow">이번 달 소비 계획</span>
+                    <h2>
+                      {budget ? (
+                        <>
+                          예산이{" "}
+                          <em className={remaining < 0 ? "over" : ""}>
+                            {won(Math.abs(remaining))}원{" "}
+                            {remaining < 0 ? "초과됐어요" : "남았어요"}
+                          </em>
+                        </>
+                      ) : (
+                        "이번 달, 얼마 안에서 써볼까요?"
+                      )}
+                    </h2>
+                  </div>
+                  <button
+                    className="outline-button"
+                    disabled={loading || !!loadError}
+                    onClick={openBudget}
+                  >
+                    <Pencil size={14} />
+                    {budget ? "예산 수정" : "예산 설정"}
+                  </button>
+                </div>
+                <div
+                  className={`progress ${remaining < 0 ? "over" : ""}`}
+                  role="progressbar"
+                  aria-label="월 예산 사용률"
+                  aria-valuenow={Math.round(ratio)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <i style={{ width: `${ratio}%` }} />
+                </div>
+                <div className="budget-foot">
+                  <span>
+                    사용 <b>{won(stats.expense)}원</b>
+                  </span>
+                  <span>
+                    {budget
+                      ? `예산 ${won(budget)}원 · ${Math.round((stats.expense / budget) * 100)}% 사용`
+                      : "예산을 정하면 남은 금액을 알려드려요"}
+                  </span>
+                </div>
+              </section>
+              <section className="dashboard-grid">
+                <div className="panel chart-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <h2>지출 흐름</h2>
+                      <p>선택한 달의 5일 단위 지출이에요</p>
+                    </div>
+                    <span className="period">{month.getMonth() + 1}월</span>
+                  </div>
+                  <div className="chart-total">
+                    <b>₩ {won(stats.expense)}</b>
+                    <span>총 지출</span>
+                  </div>
+                  <div className="chart">
+                    <div className="chart-guides">
+                      <span>
+                        ₩{won(Math.max(...stats.buckets.map((b) => b.value)))}
+                      </span>
+                      <span>₩0</span>
+                    </div>
+                    <div className="bar-area">
+                      {stats.buckets.map((b) => (
+                        <div className="bar-col" key={b.label}>
+                          <div className="bar-wrap">
+                            <div
+                              className={`bar ${b.value ? "" : "empty"}`}
+                              style={{
+                                height: `${Math.max(3, (b.value / Math.max(...stats.buckets.map((x) => x.value), 1)) * 100)}%`,
+                              }}
+                              title={`${b.label}: ${won(b.value)}원`}
+                              role="img"
+                              aria-label={`${b.label} 지출 ${won(b.value)}원`}
+                            />
+                          </div>
+                          <span>{b.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="panel insight-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <h2>어디에 썼을까요?</h2>
+                      <p>항목별 지출 비중을 살펴봐요</p>
+                    </div>
+                    <Sparkles size={18} />
+                  </div>
+                  <div className="category-stats">
+                    {stats.byCategory.length ? (
+                      stats.byCategory.map(([c, amount]) => (
+                        <div className="category-stat" key={c}>
+                          <div>
+                            <span>
+                              {emoji[c]} {c}
+                            </span>
+                            <b>
+                              {won(amount)}원{" "}
+                              <small>
+                                {Math.round((amount / stats.expense) * 100)}%
+                              </small>
+                            </b>
+                          </div>
+                          <div className="progress">
+                            <i
+                              style={{
+                                width: `${(amount / stats.expense) * 100}%`,
+                                background: tint[c] || "#cce4d5",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="mini-empty">
+                        첫 지출을 기록하면
+                        <br />
+                        나의 소비 패턴이 보여요.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </>
+          )}
+          {page !== "recurring" ? (
+            <section className="panel history-panel">
+              <div className="history-heading">
+                <div>
+                  <h2>{page === "dashboard" ? "이번 달 내역" : "전체 내역"}</h2>
+                  <p>
+                    {month.getMonth() + 1}월 · {visible.length}건의 기록
+                  </p>
+                </div>
+              </div>
+              <div className="history-tools">
+                <div className="tabs">
+                  {[
+                    ["전체", "all"],
+                    ["수입", "income"],
+                    ["지출", "expense"],
+                  ].map(([label, value]) => (
+                    <button
+                      key={value}
+                      className={filter === value ? "selected" : ""}
+                      onClick={() => setFilter(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="filter-tools">
+                  <select
+                    aria-label="카테고리 필터"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                  >
+                    <option value="all">모든 항목</option>
+                    {categories.map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
+                  </select>
+                  <div className="search-box">
+                    <Search size={15} />
+                    <input
+                      aria-label="내역 검색"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="내역 검색"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="transactions">
+                {visible.length
+                  ? visible.map((r) => (
+                      <div className="transaction" key={r.id}>
+                        <div
+                          className="category-icon"
+                          style={{ background: tint[r.category] || tint.기타 }}
+                        >
+                          {emoji[r.category] || "✨"}
+                        </div>
+                        <div className="transaction-name">
+                          <b>
+                            {r.title}{" "}
+                            {r.recurring_id && (
+                              <Repeat2 size={12} aria-label="반복 내역" />
+                            )}
+                          </b>
+                          <span>
+                            {r.category} <i>·</i>{" "}
+                            {r.date.slice(5).replace("-", "월 ")}일
+                            {r.memo && ` · ${r.memo}`}
+                          </span>
+                        </div>
+                        <div className={`transaction-amount ${r.type}`}>
+                          {r.type === "income" ? "+" : "−"} ₩{won(r.amount)}
+                        </div>
+                        <button
+                          className="row-action"
+                          aria-label={`${r.title} 수정`}
+                          disabled={busy || loading}
+                          onClick={() => openTransaction(r)}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          className="row-action danger"
+                          aria-label={`${r.title} 삭제`}
+                          disabled={busy || loading}
+                          onClick={() => {
+                            setFormError("");
+                            setModal({ kind: "delete", row: r });
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))
+                  : !loading && (
+                      <div className="empty-state">
+                        <div>🧾</div>
+                        <b>
+                          {query || filter !== "all" || category !== "all"
+                            ? "조건에 맞는 기록이 없어요"
+                            : "아직 기록이 없어요"}
+                        </b>
+                        <p>수입과 지출을 하나씩 기록해 보세요.</p>
+                        <button
+                          className="text-button"
+                          disabled={!!loadError}
+                          onClick={() => openTransaction()}
+                        >
+                          첫 내역 추가하기 <ChevronRight size={15} />
+                        </button>
+                      </div>
+                    )}
+              </div>
+            </section>
+          ) : (
+            <section className="panel recurring-panel">
+              <div className="recurring-info">
+                <Repeat2 size={20} />
+                <div>
+                  <b>매달 같은 날, 자동으로 기록해요.</b>
+                  <p>
+                    접속할 때 오늘까지 도래한 내역을 한 번씩 반영해요.
+                    <br />
+                    29~31일이 없는 달에는 그달의 마지막 날에 기록돼요.
+                  </p>
+                </div>
+              </div>
+              {safeData.rules.length ? (
+                safeData.rules.map((r) => (
+                  <div
+                    className={`rule-row ${r.active ? "" : "stopped"}`}
+                    key={r.id}
+                  >
+                    <div
+                      className="category-icon"
+                      style={{ background: tint[r.category] }}
+                    >
+                      {emoji[r.category]}
+                    </div>
+                    <div className="rule-name">
+                      <b>
+                        {r.title}{" "}
+                        <span className="rule-badge">
+                          {r.active ? "사용 중" : "종료"}
+                        </span>
+                      </b>
+                      <p>
+                        매월 {r.due_day}일 · {r.category} · {r.start_date}부터
+                      </p>
+                    </div>
+                    <b className={r.type}>
+                      {r.type === "income" ? "+" : "−"} {won(r.amount)}원
+                    </b>
+                    {r.active && (
+                      <button
+                        className="outline-button"
+                        disabled={busy || loading}
+                        onClick={() => {
+                          setFormError("");
+                          setModal({ kind: "stop", rule: r });
+                        }}
+                      >
+                        종료
+                      </button>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="empty-state">
+                  <div>🔁</div>
+                  <b>매달 받는 용돈이 있나요?</b>
+                  <p>정기 용돈이나 구독료를 등록해 보세요.</p>
+                  <button
+                    className="text-button"
+                    disabled={loading || !!loadError}
+                    onClick={() => openTransaction(null, true)}
+                  >
+                    반복 내역 등록 <Plus size={14} />
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+          <footer className="app-footer">
+            <span>✳</span> 작은 기록이 모여 큰 습관이 돼요.
+          </footer>
+        </div>
+      </main>
+      {notice && (
+        <div className="toast" role="status">
+          {notice}
+          <button aria-label="알림 닫기" onClick={() => setNotice("")}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {modal === "transaction" && (
+        <Modal
+          title={
+            form.id
+              ? "내역 수정하기"
+              : form.repeat
+                ? "반복 내역 등록"
+                : "내역 추가하기"
+          }
+          onClose={closeModal}
+        >
+          <form onSubmit={saveTransaction}>
+            <div className="type-toggle">
+              {[
+                ["expense", "지출"],
+                ["income", "수입"],
+              ].map(([t, label]) => (
+                <button
+                  type="button"
+                  key={t}
+                  className={form.type === t ? `on ${t}-on` : ""}
+                  onClick={() => setForm({ ...form, type: t })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label>
+              내역 이름
+              <input
+                required
+                maxLength={120}
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="예: 점심 식사"
+              />
+            </label>
+            <div className="form-row">
+              <label>
+                금액 (원)
+                <input
+                  required
+                  inputMode="numeric"
+                  type="number"
+                  min={1}
+                  max={2147483647}
+                  step={1}
+                  value={form.amount}
+                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  placeholder="0"
+                />
+              </label>
+              <label>
+                {form.repeat ? "반복 시작일" : "날짜"}
+                <input
+                  required
+                  type="date"
+                  min="2000-01-01"
+                  max="2100-12-31"
+                  value={form.date}
+                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+                />
+              </label>
+            </div>
+            <label>
+              카테고리
+              <select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              >
+                {categories.map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              메모 (선택)
+              <input
+                maxLength={500}
+                value={form.memo}
+                onChange={(e) => setForm({ ...form, memo: e.target.value })}
+                placeholder="간단한 메모를 남겨보세요"
+              />
+            </label>
+            {!form.id && (
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={form.repeat}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      repeat: e.target.checked,
+                      due_day: Number(form.date.slice(8)),
+                    })
+                  }
+                />
+                매달 반복하기
+              </label>
+            )}
+            {form.repeat && (
+              <>
+                <label>
+                  매월 기록할 날짜
+                  <select
+                    value={form.due_day}
+                    onChange={(e) =>
+                      setForm({ ...form, due_day: Number(e.target.value) })
+                    }
+                  >
+                    {Array.from({ length: 31 }, (_, i) => (
+                      <option key={i + 1} value={i + 1}>
+                        {i + 1}일
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="form-hint">
+                  시작일 이후부터 오늘까지 도래한 내역이 반영돼요. 해당 날짜가
+                  없는 달에는 말일에 기록돼요.
+                </p>
+              </>
+            )}
+            {formError && (
+              <div className="error" role="alert">
+                {formError}
+              </div>
+            )}
+            <button className="primary save-button" disabled={busy}>
+              {busy ? "저장 중…" : "저장하기"} <Check size={17} />
+            </button>
+          </form>
+        </Modal>
+      )}
+      {modal === "budget" && (
+        <Modal
+          title={`${month.getMonth() + 1}월 예산 설정`}
+          onClose={closeModal}
+        >
+          <form onSubmit={saveBudget}>
+            <p className="form-hint">
+              이번 달 지출 목표를 정해 보세요. 매달 따로 설정할 수 있어요.
+            </p>
+            <label>
+              월 예산 (원)
+              <input
+                required
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={2147483647}
+                step={1}
+                value={budgetInput}
+                onChange={(e) => setBudgetInput(e.target.value)}
+                placeholder="예: 300000"
+              />
+            </label>
+            {formError && (
+              <div className="error" role="alert">
+                {formError}
+              </div>
+            )}
+            <button className="primary save-button" disabled={busy}>
+              {busy ? "저장 중…" : "예산 저장"} <Check size={17} />
+            </button>
+          </form>
+        </Modal>
+      )}
+      {modal?.kind === "delete" && (
+        <Modal title="내역을 삭제할까요?" onClose={closeModal}>
+          <p className="form-hint">
+            ‘{modal.row.title}’ {won(modal.row.amount)}원 기록을 삭제해요.
+            {modal.row.recurring_id && " 이 기록은 다시 자동 생성되지 않아요."}
+          </p>
+          {formError && (
+            <div className="error" role="alert">
+              {formError}
+            </div>
+          )}
+          <div className="confirm-actions">
+            <button
+              className="outline-button"
+              disabled={busy}
+              onClick={() => setModal(null)}
+            >
+              취소
+            </button>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => deleteTransaction(modal.row)}
+            >
+              {busy ? "처리 중…" : "삭제하기"}
+            </button>
+          </div>
+        </Modal>
+      )}
+      {modal?.kind === "stop" && (
+        <Modal title="이 내역의 반복을 종료할까요?" onClose={closeModal}>
+          <p className="form-hint">
+            ‘{modal.rule.title}’의 앞으로의 자동 기록을 종료해요. 이미 기록된
+            내역은 유지돼요.
+          </p>
+          {formError && (
+            <div className="error" role="alert">
+              {formError}
+            </div>
+          )}
+          <div className="confirm-actions">
+            <button
+              className="outline-button"
+              disabled={busy}
+              onClick={() => setModal(null)}
+            >
+              취소
+            </button>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => stopRule(modal.rule)}
+            >
+              {busy ? "처리 중…" : "반복 종료"}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+createRoot(document.getElementById("root")).render(<App />);
