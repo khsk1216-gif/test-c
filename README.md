@@ -38,10 +38,10 @@ npm run dev
 1. 이 GitHub 저장소를 Vercel에 Import 합니다.
 2. Framework: Vite / Install: `npm ci` / Build: `npm run build` / Output: `dist`.
 3. Vercel Environment Variables에 위 두 변수를 Production·Preview·Development에 설정하고 배포합니다.
-4. Supabase Authentication → URL Configuration에서 Site URL과 Redirect URLs에 실제 배포 URL을 등록합니다. 배포 URL은 아직 확정되지 않았습니다.
+4. Supabase Authentication → URL Configuration에서 Site URL과 Redirect URLs에 실제 배포 URL을 등록합니다. 검증된 배포 주소는 `https://test-c-eight.vercel.app`입니다. 이 도메인의 인증 리디렉션 허용 설정은 별도로 확인하세요.
 5. 회원가입 확인과 비밀번호 재설정 메일을 일반 사용자에게 보내려면 Supabase의 custom SMTP 설정을 확인합니다. 기본 메일 발송 서비스는 팀 구성원 주소로 제한됩니다. https://supabase.com/docs/guides/auth/auth-smtp
 
-이 작업에서는 Vercel의 기존 test-c 조회가 404/403, 새 프로젝트 생성이 403으로 거절돼 Vercel 배포를 완료하지 못했습니다. GitHub와 Supabase 작업은 별도로 진행됐으며, Vercel 배포 성공으로 간주하지 않습니다.
+현재 기존 Vercel `test-c` 프로젝트에 GitHub main 브랜치가 연결되어 자동 배포됩니다. 프로덕션 주소: https://test-c-eight.vercel.app . 구현 커밋 `babf24b`의 READY 상태, 공개 주소의 HTTP 200, 브라우저 로그인 화면과 콘솔 오류 없음을 확인했습니다. 팀 ID를 명시한 API 요청은 403/404가 발생했지만, 동일한 소유 계정과 프로젝트임을 확인한 뒤 기본 계정 범위로 조회하면 정상 작동했습니다. 이 오류를 실제 배포 실패로 안내했던 이전 기록을 정정합니다.
 
 ## 검증
 
@@ -51,4 +51,4 @@ npm run check
 
 날짜 경계, 윤년·월말, 월별 통계, 반복 중복 방지, 삭제 항목 유지, 금액 검증을 테스트합니다. `tests/rls.sql`은 실제 Supabase에서 별도 트랜잭션과 임시 사용자로 소유자 격리·반복 생성·쓰기 권한을 검증하며 마지막에 전부 롤백합니다. 현재 DB에서 통과했습니다.
 
-프로덕션 빌드는 통과했습니다. Vercel 연결이 차단되어 실제 배포 환경의 브라우저 동작과 가입 이메일 전달은 미검증입니다. Supabase 보안 점검에서 유출 비밀번호 보호가 비활성화된 점이 확인됐습니다. 설정 설명: https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection
+프로덕션 빌드는 통과했습니다. 배포 환경에서 로그인 화면 표시, JS 파일 로드, Supabase URL과 예산·반복 내역 코드 포함, 브라우저 콘솔 오류 없음을 확인했습니다. 실제 회원가입 이메일 전달과 로그인 후 전체 사용자 흐름은 미검증입니다. Supabase 보안 점검에서 유출 비밀번호 보호가 비활성화된 점이 확인됐습니다. 설정 설명: https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection
