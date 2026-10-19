@@ -11,7 +11,8 @@
 - 처음 접속하면 익명 세션을 자동으로 만들고, 브라우저가 해당 세션을 보관합니다.
 - 같은 브라우저에서 새로고침하거나 다시 열면 같은 기록이 이어집니다.
 - 서로 다른 브라우저·기기의 기록은 분리됩니다. 브라우저 데이터를 지우거나 익명 세션을 잃으면 해당 기록에 다시 접근할 수 없습니다.
-- 실제 내역·예산·반복 설정은 Supabase에 저장되며, `auth.uid() = user_id`인 소유자만 조회·수정할 수 있습니다.
+- 실제 내역·예산·반복 설정은 항상 Supabase에 저장되며, `auth.uid() = user_id`인 소유자만 조회·수정할 수 있습니다. 브라우저에는 접근용 세션 정보만 보관합니다.
+- 관리자는 Supabase Table Editor에서 `transactions`(수입·지출), `moa_budgets`(예산), `moa_recurring`(반복 설정)을 관리할 수 있습니다: https://supabase.com/dashboard/project/zgytnverfhizbcjsqgjx/editor
 
 ## 기능
 
@@ -40,7 +41,7 @@ Supabase Authentication → Sign In / Providers에서 **Allow anonymous sign-ins
 
 Vercel: Framework Vite / Install `npm ci` / Build `npm run build` / Output `dist`. GitHub main에 반영하면 기존 test-c 프로젝트가 자동 배포합니다. 팀 ID를 명시한 조회에서 오류가 발생한 경우 확인된 소유 계정의 기본 범위에서 프로젝트를 조회하면 정상 작동했습니다.
 
-환경 변수가 없는 로컬 실행은 기존 브라우저 저장 모드로 자동 시작하며, Supabase 연결 오류를 브라우저 저장으로 조용히 대체하지 않습니다. 기존 체험 공간의 로컬 데이터는 지우거나 다른 사용자에게 합치지 않습니다.
+브라우저에만 기록을 저장하는 모드는 제거했습니다. 환경 변수가 없으면 연결 설정 오류를 표시하고, Supabase 연결이나 저장 요청이 실패하면 성공으로 처리하지 않습니다. 브라우저 데이터를 삭제하더라도 서버에 저장된 기록은 삭제되지 않으며, 익명 접속 정보를 잃으면 일반 사용자 화면에서 해당 기록을 다시 불러올 수 없다는 의미입니다. 관리자는 Supabase에서 계속 관리할 수 있습니다.
 
 ## 검증
 

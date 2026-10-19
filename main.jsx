@@ -29,15 +29,17 @@ import {
   monthKey,
   validAmount,
   monthStats,
-  syncGuest,
 } from "./domain.mjs";
 import { ensureSession } from "./session.mjs";
 import "./style.css";
 const url = import.meta.env.VITE_SUPABASE_URL,
   key = import.meta.env.VITE_SUPABASE_ANON_KEY,
   db = url && key ? createClient(url, key) : null;
-const guestKey = "moa-guest-v2",
-  emptyData = () => ({ rows: [], budgets: [], rules: [] });
+const emptyData = () => ({
+  rows: [],
+  budgets: [],
+  rules: [],
+});
 const emoji = {
   용돈: "🪙",
   아르바이트: "💼",
@@ -74,7 +76,6 @@ const friendly = (e) =>
   e?.message?.includes("Failed to fetch")
     ? "연결을 확인하고 다시 시도해 주세요."
     : "처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
-
 function Modal({ title, children, onClose }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -136,7 +137,6 @@ function Modal({ title, children, onClose }) {
 function App() {
   const [user, setUser] = useState(null),
     [ready, setReady] = useState(false),
-    [guest, setGuest] = useState(false),
     [data, setData] = useState(emptyData),
     [loading, setLoading] = useState(false),
     [loadError, setLoadError] = useState("");
@@ -160,7 +160,7 @@ function App() {
     activeUser = useRef(null),
     busyRef = useRef(false);
   busyRef.current = busy;
-  const safeData = guest || data.owner === user?.id ? data : emptyData();
+  const safeData = data.owner === user?.id ? data : emptyData();
   const ym = monthKey(month),
     stats = monthStats(safeData.rows, ym),
     budget = safeData.budgets.find((b) => b.month === `${ym}-01`)?.amount || 0,
@@ -187,7 +187,9 @@ function App() {
     setSessionError("");
     setReady(false);
     if (!db) {
-      enterGuest();
+      setSessionError(
+        "서버 저장 연결이 설정되지 않았어요. 관리자에게 문의해 주세요.",
+      );
       setReady(true);
       return;
     }
@@ -227,21 +229,13 @@ function App() {
     activeUser.current = user?.id || null;
   }, [user?.id]);
   useEffect(() => {
-    if (guest || !user?.id) return;
+    if (!user?.id) return;
     setData(emptyData());
     loadData(user.id);
     return () => {
       generation.current++;
     };
-  }, [user?.id, guest]);
-  useEffect(() => {
-    if (guest)
-      try {
-        localStorage.setItem(guestKey, JSON.stringify(data));
-      } catch {
-        setNotice("브라우저 저장 공간이 부족해요. 저장 공간을 확인해 주세요.");
-      }
-  }, [data, guest]);
+  }, [user?.id]);
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(() => setNotice(""), 5000);
@@ -251,7 +245,6 @@ function App() {
     const refresh = () => {
       if (
         document.visibilityState === "visible" &&
-        !guest &&
         user?.id &&
         !busyRef.current
       )
@@ -259,7 +252,7 @@ function App() {
     };
     document.addEventListener("visibilitychange", refresh);
     return () => document.removeEventListener("visibilitychange", refresh);
-  }, [user?.id, guest]);
+  }, [user?.id]);
   async function loadData(id) {
     const run = ++generation.current;
     setLoading(true);
@@ -286,33 +279,37 @@ function App() {
           .from("moa_recurring")
           .select("*")
           .eq("user_id", id)
-          .order("created_at", { ascending: false }),
+          .order("created_at", {
+            ascending: false,
+          }),
       ]);
       if (b.error) throw b.error;
       if (r.error) throw r.error;
       if (generation.current === run && activeUser.current === id)
-        setData({ rows, budgets: b.data, rules: r.data, owner: id });
+        setData({
+          rows,
+          budgets: b.data,
+          rules: r.data,
+          owner: id,
+        });
     } catch (e) {
       if (generation.current === run) setLoadError(friendly(e));
     } finally {
       if (generation.current === run) setLoading(false);
     }
   }
-  function enterGuest() {
-    let saved = emptyData();
-    try {
-      const p = JSON.parse(localStorage.getItem(guestKey));
-      if (p && ["rows", "budgets", "rules"].every((k) => Array.isArray(p[k])))
-        saved = p;
-    } catch {}
-    generation.current++;
-    setData(syncGuest(saved));
-    setGuest(true);
-    setLoadError("");
-    setLoading(false);
-  }
   function openTransaction(row = null, repeat = false) {
-    setForm(row ? { ...row, repeat: false } : { ...freshForm(), repeat });
+    setForm(
+      row
+        ? {
+            ...row,
+            repeat: false,
+          }
+        : {
+            ...freshForm(),
+            repeat,
+          },
+    );
     setFormError("");
     setModal("transaction");
     setMenu(false);
@@ -331,7 +328,7 @@ function App() {
     const id = user?.id;
     try {
       await work();
-      if (!guest && activeUser.current === id) await loadData(id);
+      if (activeUser.current === id) await loadData(id);
       setModal(null);
       setNotice(success);
     } catch (e) {
@@ -368,27 +365,14 @@ function App() {
               due_day: Number(form.due_day),
               active: true,
             };
-          if (guest)
-            setData((d) =>
-              syncGuest({
-                ...d,
-                rules: [{ ...r, id: crypto.randomUUID() }, ...d.rules],
-              }),
-            );
-          else {
-            const q = await db
-              .from("moa_recurring")
-              .insert({ ...r, user_id: user.id });
+          {
+            const q = await db.from("moa_recurring").insert({
+              ...r,
+              user_id: user.id,
+            });
             if (q.error) throw q.error;
           }
-        } else if (guest)
-          setData((d) => ({
-            ...d,
-            rows: form.id
-              ? d.rows.map((r) => (r.id === form.id ? { ...r, ...p } : r))
-              : [{ ...p, id: crypto.randomUUID() }, ...d.rows],
-          }));
-        else {
+        } else {
           const q = form.id
             ? await db
                 .from("transactions")
@@ -399,7 +383,10 @@ function App() {
                 .single()
             : await db
                 .from("transactions")
-                .insert({ ...p, user_id: user.id })
+                .insert({
+                  ...p,
+                  user_id: user.id,
+                })
                 .select("id")
                 .single();
           if (q.error) throw q.error;
@@ -419,33 +406,32 @@ function App() {
       return;
     }
     mutate(async () => {
-      const b = { month: `${ym}-01`, amount: Number(budgetInput) };
-      if (guest)
-        setData((d) => ({
-          ...d,
-          budgets: [...d.budgets.filter((x) => x.month !== b.month), b],
-        }));
-      else {
-        const q = await db
-          .from("moa_budgets")
-          .upsert({ ...b, user_id: user.id }, { onConflict: "user_id,month" });
+      const b = {
+        month: `${ym}-01`,
+        amount: Number(budgetInput),
+      };
+      {
+        const q = await db.from("moa_budgets").upsert(
+          {
+            ...b,
+            user_id: user.id,
+          },
+          {
+            onConflict: "user_id,month",
+          },
+        );
         if (q.error) throw q.error;
       }
     }, "이번 달 예산을 저장했어요.");
   }
   function deleteTransaction(row) {
     mutate(async () => {
-      if (guest)
-        setData((d) => ({
-          ...d,
-          rows: d.rows.map((r) =>
-            r.id === row.id ? { ...r, is_deleted: true } : r,
-          ),
-        }));
-      else {
+      {
         const q = await db
           .from("transactions")
-          .update({ is_deleted: true })
+          .update({
+            is_deleted: true,
+          })
           .eq("id", row.id)
           .eq("user_id", user.id)
           .select("id")
@@ -456,17 +442,12 @@ function App() {
   }
   function stopRule(rule) {
     mutate(async () => {
-      if (guest)
-        setData((d) => ({
-          ...d,
-          rules: d.rules.map((r) =>
-            r.id === rule.id ? { ...r, active: false } : r,
-          ),
-        }));
-      else {
+      {
         const q = await db
           .from("moa_recurring")
-          .update({ active: false })
+          .update({
+            active: false,
+          })
           .eq("id", rule.id)
           .eq("user_id", user.id)
           .select("id")
@@ -494,7 +475,7 @@ function App() {
         </section>
       </div>
     );
-  if (!ready || (!guest && !user))
+  if (!ready || !user)
     return (
       <div className="loading" role="status">
         나만의 기록을 불러오는 중이에요…
@@ -561,9 +542,7 @@ function App() {
           <div className="avatar">{name[0].toUpperCase()}</div>
           <div className="user-info">
             <b>{name}</b>
-            <span>
-              {guest ? "브라우저에 자동 저장" : "나만의 기록 · 자동 저장"}
-            </span>
+            <span>{"나만의 기록 · 자동 저장"}</span>
           </div>
         </div>
       </aside>
@@ -595,9 +574,7 @@ function App() {
               className="icon-button"
               aria-label="새로고침"
               disabled={loading || busy}
-              onClick={() =>
-                guest ? setData((d) => syncGuest(d)) : loadData(user.id)
-              }
+              onClick={() => loadData(user.id)}
             >
               <RefreshCw size={16} className={loading ? "spin" : ""} />
             </button>
@@ -607,9 +584,9 @@ function App() {
         <div className="content">
           <div className="guest-banner">
             <span>
-              가입 없이 바로 기록하세요. 같은 브라우저에서 기록이 이어져요.
+              수입·지출과 예산은 Supabase에 자동 저장돼요.
               <br />
-              브라우저 데이터를 지우면 기존 기록에 다시 접근할 수 없어요.
+              브라우저에는 내 기록을 불러오는 접속 정보만 보관해요.
             </span>
           </div>
           <div className="welcome-row">
@@ -764,7 +741,11 @@ function App() {
                   aria-valuemin={0}
                   aria-valuemax={100}
                 >
-                  <i style={{ width: `${ratio}%` }} />
+                  <i
+                    style={{
+                      width: `${ratio}%`,
+                    }}
+                  />
                 </div>
                 <div className="budget-foot">
                   <span>
@@ -916,7 +897,9 @@ function App() {
                       <div className="transaction" key={r.id}>
                         <div
                           className="category-icon"
-                          style={{ background: tint[r.category] || tint.기타 }}
+                          style={{
+                            background: tint[r.category] || tint.기타,
+                          }}
                         >
                           {emoji[r.category] || "✨"}
                         </div>
@@ -950,7 +933,10 @@ function App() {
                           disabled={busy || loading}
                           onClick={() => {
                             setFormError("");
-                            setModal({ kind: "delete", row: r });
+                            setModal({
+                              kind: "delete",
+                              row: r,
+                            });
                           }}
                         >
                           <Trash2 size={15} />
@@ -998,7 +984,9 @@ function App() {
                   >
                     <div
                       className="category-icon"
-                      style={{ background: tint[r.category] }}
+                      style={{
+                        background: tint[r.category],
+                      }}
                     >
                       {emoji[r.category]}
                     </div>
@@ -1022,7 +1010,10 @@ function App() {
                         disabled={busy || loading}
                         onClick={() => {
                           setFormError("");
-                          setModal({ kind: "stop", rule: r });
+                          setModal({
+                            kind: "stop",
+                            rule: r,
+                          });
                         }}
                       >
                         종료
@@ -1080,7 +1071,12 @@ function App() {
                   type="button"
                   key={t}
                   className={form.type === t ? `on ${t}-on` : ""}
-                  onClick={() => setForm({ ...form, type: t })}
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      type: t,
+                    })
+                  }
                 >
                   {label}
                 </button>
@@ -1092,7 +1088,12 @@ function App() {
                 required
                 maxLength={120}
                 value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    title: e.target.value,
+                  })
+                }
                 placeholder="예: 점심 식사"
               />
             </label>
@@ -1107,7 +1108,12 @@ function App() {
                   max={2147483647}
                   step={1}
                   value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      amount: e.target.value,
+                    })
+                  }
                   placeholder="0"
                 />
               </label>
@@ -1119,7 +1125,12 @@ function App() {
                   min="2000-01-01"
                   max="2100-12-31"
                   value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      date: e.target.value,
+                    })
+                  }
                 />
               </label>
             </div>
@@ -1127,7 +1138,12 @@ function App() {
               카테고리
               <select
                 value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    category: e.target.value,
+                  })
+                }
               >
                 {categories.map((c) => (
                   <option key={c}>{c}</option>
@@ -1139,7 +1155,12 @@ function App() {
               <input
                 maxLength={500}
                 value={form.memo}
-                onChange={(e) => setForm({ ...form, memo: e.target.value })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    memo: e.target.value,
+                  })
+                }
                 placeholder="간단한 메모를 남겨보세요"
               />
             </label>
@@ -1166,14 +1187,22 @@ function App() {
                   <select
                     value={form.due_day}
                     onChange={(e) =>
-                      setForm({ ...form, due_day: Number(e.target.value) })
+                      setForm({
+                        ...form,
+                        due_day: Number(e.target.value),
+                      })
                     }
                   >
-                    {Array.from({ length: 31 }, (_, i) => (
-                      <option key={i + 1} value={i + 1}>
-                        {i + 1}일
-                      </option>
-                    ))}
+                    {Array.from(
+                      {
+                        length: 31,
+                      },
+                      (_, i) => (
+                        <option key={i + 1} value={i + 1}>
+                          {i + 1}일
+                        </option>
+                      ),
+                    )}
                   </select>
                 </label>
                 <p className="form-hint">
